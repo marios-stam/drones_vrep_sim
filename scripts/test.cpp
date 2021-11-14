@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <tf/LinearMath/Vector3.h>
 #include <tf/transform_listener.h>
+#include "std_msgs/Float32MultiArray.h"
 
 #include <cmath>
 #include <eigen3/Eigen/Dense>
@@ -33,6 +34,7 @@ float vertical_control(double targetHeight , double height ,double vel_z ){
     static float cumul = 0,lastE = 0;
 
     double e = (targetHeight - height);
+    ROS_INFO("e_vertical: %f",e);
     cumul = cumul + e;
     float pv = pParam * e;
 
@@ -44,9 +46,15 @@ float vertical_control(double targetHeight , double height ,double vel_z ){
 
 void horizontal_control(Eigen::Matrix4f mat,Eigen::Vector3f sp,float &alphaCorr,float &betaCorr){
 	Eigen::Vector4f vx, vy;
-    vx << 1, 0, 0, 0;
-    vy << 0, 1, 0, 0;
+    vx << 1, 0, 0, 1;
+    vy << 0, 1, 0, 1;
 
+    // printing m matrix
+    // ROS_INFO("%f %f %f %f",mat.coeff(0,0),mat.coeff(0,1),mat.coeff(0,2),mat.coeff(0,3));
+    // ROS_INFO("%f %f %f %f",mat.coeff(1,0),mat.coeff(1,1),mat.coeff(1,2),mat.coeff(1,3));
+    // ROS_INFO("%f %f %f %f",mat.coeff(2,0),mat.coeff(2,1),mat.coeff(2,2),mat.coeff(2,3));
+    // ROS_INFO("%f %f %f %f",mat.coeff(3,0),mat.coeff(3,1),mat.coeff(3,2),mat.coeff(3,3));
+    
     vx = mat * vx;
     vy = mat * vy;
 
@@ -83,20 +91,26 @@ void horizontal_control(Eigen::Matrix4f mat,Eigen::Vector3f sp,float &alphaCorr,
 
 	psp2 = sp[1];
     psp1 = sp[0];
+
+    ROS_INFO("alphaE: %f betaE: %f", alphaE, betaE);
+    // ROS_INFO("vy %f %f %f ",vy[0],vy[1],vy[2]);
+    // ROS_INFO("vy[2]: %f m[2,3]: %f", vy[2], mat.coeff(2, 3));
 }
 
-double rotational_control(float yaw , float des_yaw){
+// double rotational_control(float yaw , float des_yaw){
+double rotational_control(float yaw_error){
 	static float pYaw = 0;
     
-	double yaw_error = des_yaw - yaw;
+	// double yaw_error = des_yaw - yaw;
+    ROS_INFO("yaw_error: %f",yaw_error);
     double rotCorr = yaw_error * 0.1 + 2 * (yaw_error - pYaw);
-    pYaw = yaw;
+    pYaw = yaw_error;
 
 	return rotCorr;
 }
 
 void control(tf::StampedTransform transform, tf::StampedTransform vel_transform,
-             tf::StampedTransform des_transform)
+             tf::StampedTransform des_transform, float ( &vel )[4])
 {
     // get relative position
     Eigen::Matrix4f mat = tfTransform_2_EigenMatrix(transform);
@@ -104,7 +118,6 @@ void control(tf::StampedTransform transform, tf::StampedTransform vel_transform,
     Eigen::Vector3f pos = mat.block<3, 1>(0, 3);
     tf::Vector3 sp_tf = des_transform.getOrigin() - transform.getOrigin();
     Eigen::Vector3f sp = Eigen::Vector3f(sp_tf.getX(), sp_tf.getY(), sp_tf.getZ());
-
 	tf::Vector3 l = vel_transform.getOrigin();
 
     double targetHeight = des_transform.getOrigin().getZ();
@@ -122,20 +135,18 @@ void control(tf::StampedTransform transform, tf::StampedTransform vel_transform,
     double des_euler[3],euler[3];
 	des_transform.getBasis().getEulerYPR(des_euler[0], des_euler[1], des_euler[2] );
 	transform.getBasis().getEulerYPR(euler[0], euler[1], euler[2] );
-	
-	double rotCorr = rotational_control(euler[0],des_euler[0]);
     
-
-    double vel[4];
+    double yaw_error =vel_transform.getRotation().getZ();
+	double rotCorr = rotational_control(yaw_error);
+    
     vel[0] = thrust * (1 - alphaCorr + betaCorr + rotCorr);
 	vel[1] = thrust * (1 - alphaCorr - betaCorr - rotCorr); 
 	vel[2] = thrust * (1 + alphaCorr - betaCorr + rotCorr); 
 	vel[3] = thrust * (1 + alphaCorr + betaCorr - rotCorr);
 
-	ROS_INFO("Thrust: %f  alphaCorr: %f  betaCorr: %f rotCorr: %f",thrust,alphaCorr,betaCorr,rotCorr);
+	// ROS_INFO("Thrust: %f  alphaCorr: %f  betaCorr: %f rotCorr: %f",thrust,alphaCorr,betaCorr,rotCorr);
+    ROS_INFO("sp: %f %f %f", sp[0], sp[1], sp[2]);
 
-	// ROS_INFO("Rotor RPMs");
-	// ROS_INFO("%f %f %f %f",vel[0],vel[1],vel[2],vel[3]);
 }
 
 int main(int argc, char **argv)
@@ -148,6 +159,8 @@ int main(int argc, char **argv)
 
     tf::TransformListener listener;
 
+    ros::Publisher rpm_pub = node.advertise<std_msgs::Float32MultiArray>("rotors_RPM", 1000);
+    
     ros::Rate rate(10.0);
     while (node.ok())
     {
@@ -172,17 +185,33 @@ int main(int argc, char **argv)
         tf::Matrix3x3 rot = transform_pos.getBasis();
         double roll, pitch, yaw;
         rot.getRPY(roll, pitch, yaw);
-        // ROS_INFO("roll: %f, pitch: %f, yaw: %f", roll, pitch, yaw);
 
         pos = transform_vel.getOrigin();
-        // ROS_INFO("x_vel: %f, y_vel: %f, z_vel: %f", pos.x(), pos.y(), pos.z());
-
+       
         tf::StampedTransform des_transform;
-        des_transform.setOrigin(tf::Vector3(0, 0, 2));
-        des_transform.setRotation(tf::Quaternion(0, 0, 0, 1));
+        des_transform.setOrigin(tf::Vector3(-0.62500011920929, 0.64999997615814, 1.2500002384186));
+        tf::Quaternion q;
+        q.setRPY(-0.0002207071374869, -0.011167052201927, -0.00058256444754079);
+
+        des_transform.setRotation(q);
         des_transform.stamp_ = ros::Time::now();
 
-        control(transform_pos, transform_vel, des_transform);
+        float vel[4];
+        control(transform_pos, transform_vel, des_transform,vel);
+
+        std_msgs::Float32MultiArray msg;
+        msg.data.push_back( (float) vel[0]);
+        msg.data.push_back( (float) vel[1]);
+        msg.data.push_back( (float) vel[2]);
+        msg.data.push_back( (float) vel[3]);
+        
+        
+        // Debugging
+        // ROS_INFO("x_vel: %f, y_vel: %f, z_vel: %f", pos.x(), pos.y(), pos.z());
+        // ROS_INFO("roll: %f, pitch: %f, yaw: %f", roll, pitch, yaw);
+	    // ROS_INFO("Rotor RPMs: %f %f %f %f",vel[0],vel[1],vel[2],vel[3]);
+        
+        rpm_pub.publish(msg);
 
         rate.sleep();
     }

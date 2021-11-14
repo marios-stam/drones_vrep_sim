@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>vrep_sim</name>
+  <name>drones_vrep_sim</name>
   <version>0.0.0</version>
   <description>The vrep_sim package</description>
 
