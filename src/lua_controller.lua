@@ -21,8 +21,6 @@ function sysCall_init()
         --Velocity publisher 
         vel_pub=simROS.advertise('/drone_velocity', 'std_msgs/Float32MultiArray')
         simROS.publisherTreatUInt8ArrayAsString(vel_pub) -- treat uint8 arrays as strings (much faster, tables/arrays are kind of slow in Lua)
-        
-        
     end
     
 
@@ -62,7 +60,7 @@ function sysCall_init()
     psp1=0
 
     prevEuler=0
-cumulA=0
+    cumulA=0
     cumulB=0
 
     if (fakeShadow) then
@@ -101,9 +99,8 @@ function sysCall_actuation()
                 rotation={x=quat[1],y=quat[2],z=quat[3],w=quat[4]}--v-rep
             }
         }
-        --print(pos_transform_msg)
         simROS.sendTransform(pos_transform_msg)
-        
+        error_euler=sim.getObjectOrientation(d,targetObj)
         --Velocity Transformation
         l=sim.getVelocity(heli)
     
@@ -116,7 +113,7 @@ function sysCall_actuation()
             transform={
                 -- ROS has definition x=front y=side z=up
                 translation={x=l[1],y=l[2],z=l[3]},--V-rep
-                rotation={x = 1 , y = 2 , z = 3 , w = 4 }--v-rep
+                rotation={x = error_euler[1] , y = error_euler[2] , z = error_euler[3] , w = 1 }--v-rep
             }
         }
         --print(pos_transform_msg)
@@ -131,70 +128,91 @@ function sysCall_actuation()
     else
         sim.addLog(sim.verbosity_scripterrors,"ROS interface was not found. Cannot run.")
     end
-    
-    -- Vertical control:
-    targetPos=sim.getObjectPosition(targetObj,-1)
-    pos=sim.getObjectPosition(d,-1)
-    l=sim.getVelocity(heli)
-    e=(targetPos[3]-pos[3])
-    cumul=cumul+e
-    pv=pParam*e
-    thrust=5.45+pv+iParam*cumul+dParam*(e-lastE)+l[3]*vParam
-    lastE=e
-    
-   -- Horizontal control: 
-    sp=sim.getObjectPosition(targetObj,d)
-    --print(sp)
-    m=sim.getObjectMatrix(d,-1)
-    vx={1,0,0}
-    vx=sim.multiplyVector(m,vx)
-    vy={0,1,0}
-    vy=sim.multiplyVector(m,vy)
-    alphaE=(vy[3]-m[12])
-    
-    --print("cumulA",cumulA)
-    --alphaCorr=0.25*alphaE+2.1*(alphaE-pAlphaE)
-    alphaCorr=0.25*alphaE +2.1*(alphaE-pAlphaE) 
-    betaE=(vx[3]-m[12])
-    --print("errorA",alphaE)
-    --print("errorB",betaE)
-    --print("cumulB",cumulB)
-    --betaCorr=-0.25*betaE-2.1*(betaE-pBetaE)
-    betaCorr=-0.25*betaE -2.1*(betaE-pBetaE)
-    pAlphaE=alphaE
-    pBetaE=betaE
-    cumulA=cumulA+sp[2]
-    cumulB=cumulB+sp[1]
-    threshold=0.5
-    if (math.abs(psp2)>threshold and math.abs(sp[2])<threshold) then
-        cumulA=0
-    end
-    if (math.abs(psp1)>threshold and math.abs(sp[1])<threshold) then
-        cumulB=0
-    end
-    
-    --print('eB',sp[1])
-    kp=0.08
-    ki=0.005
-    kd=3
-    --alphaCorr=alphaCorr+sp[2]*0.005+1*(sp[2]-psp2)
-    --betaCorr=betaCorr-sp[1]*0.005-1*(sp[1]-psp1)
-    alphaCorr = alphaCorr + kp*sp[2] + kd*(sp[2]-psp2) + ki*cumulA
-    betaCorr  = betaCorr  - kp*sp[1] - kd*(sp[1]-psp1) - ki*cumulB
-    
-    psp2=sp[2]
-    psp1=sp[1]
+    if (CONTROL_FROM_ROS == false) then
+        -- Vertical control:
+        targetPos=sim.getObjectPosition(targetObj,-1)
+        print("des_pos",targetPos)
+        pos=sim.getObjectPosition(d,-1)
+        l=sim.getVelocity(heli)
+        e=(targetPos[3]-pos[3])
+        print("e_vert",e)
+        cumul=cumul+e
+        pv=pParam*e
+        thrust=5.45+pv+iParam*cumul+dParam*(e-lastE)+l[3]*vParam
+        lastE=e
+        
+        -- Horizontal control: 
+        sp=sim.getObjectPosition(targetObj,d)
+        --print(sp)
+        m=sim.getObjectMatrix(d,-1)
+        vx={1,0,0}
+        vx=sim.multiplyVector(m,vx)
+        vy={0,1,0}
+        -- print("Before mul")
+        -- print(m[1],"  ",m[2],"  ",m[3],"  ",m[4],"  ")
+        -- print(m[5],"  ",m[6],"  ",m[7],"  ",m[8],"  ")
+        -- print(m[9],"  ",m[10],"  ",m[11],"  ",m[12],"  ")
+        
+        vy=sim.multiplyVector(m,vy)
+        alphaE=(vy[3]-m[12])
+        
+        --alphaCorr=0.25*alphaE+2.1*(alphaE-pAlphaE)
+        alphaCorr=0.25*alphaE +2.1*(alphaE-pAlphaE) 
+        betaE=(vx[3]-m[12])
 
+        --betaCorr=-0.25*betaE-2.1*(betaE-pBetaE)
+        betaCorr=-0.25*betaE -2.1*(betaE-pBetaE)
+        pAlphaE=alphaE
+        pBetaE=betaE
+        cumulA=cumulA+sp[2]
+        cumulB=cumulB+sp[1]
+        threshold=0.5
+        if (math.abs(psp2)>threshold and math.abs(sp[2])<threshold) then
+            cumulA=0
+        end
+        if (math.abs(psp1)>threshold and math.abs(sp[1])<threshold) then
+            cumulB=0
+        end
+        
+        --print('eB',sp[1])
+        kp=0.08
+        ki=0.005
+        kd=3
+        --alphaCorr=alphaCorr+sp[2]*0.005+1*(sp[2]-psp2)
+        --betaCorr=betaCorr-sp[1]*0.005-1*(sp[1]-psp1)
+        alphaCorr = alphaCorr + kp*sp[2] + kd*(sp[2]-psp2) + ki*cumulA
+        betaCorr  = betaCorr  - kp*sp[1] - kd*(sp[1]-psp1) - ki*cumulB
+        
+        psp2=sp[2]
+        psp1=sp[1]
+
+        
+        -- Rotational control:
+        euler=sim.getObjectOrientation(d,targetObj)
+        des_euler=sim.getObjectOrientation(targetObj,-1)
+        print("des_euler",des_euler)
+        print("yaw_error:",euler[3])
+        rotCorr=euler[3]*0.1+2*(euler[3]-prevEuler)
+        prevEuler=euler[3]
+        
+        print("des_euler",euler)
+        
+        vel[0] = thrust*(1-alphaCorr+betaCorr+rotCorr)
+        vel[1] = thrust*(1-alphaCorr-betaCorr-rotCorr)
+        vel[2] = thrust*(1+alphaCorr-betaCorr+rotCorr)
+        vel[3] = thrust*(1+alphaCorr+betaCorr-rotCorr)
+    end
     
-    -- Rotational control:
-    euler=sim.getObjectOrientation(d,targetObj)
-    rotCorr=euler[3]*0.1+2*(euler[3]-prevEuler)
-    prevEuler=euler[3]
     
-    vel[0] = thrust*(1-alphaCorr+betaCorr+rotCorr)
-    vel[1] = thrust*(1-alphaCorr-betaCorr-rotCorr)
-    vel[2] = thrust*(1+alphaCorr-betaCorr+rotCorr)
-    vel[3] = thrust*(1+alphaCorr+betaCorr-rotCorr)
+    --print("thrust",thrust," alphaCorr",alphaCorr," betaCorr",betaCorr," rotCorr",rotCorr)
+    --print("pos:",pos )
+    --print("l:",l)
+    --print("Euler:",euler)
+    --print("vy[3]: ",vy[3],"  m[12]: ",m[12])
+    -- print("alphaE:",alphaE,"betaE:",betaE)
+    --print(vel[0],"   ",vel[1],"   ",vel[2],"   ",vel[3])
+    --print("ROTOR RPMs:",vel[0]," ",vel[1]," ",vel[2]," ",vel[3])
+    print("sp",sp)
     -- Decide of the motor velocities:
     handlePropeller(1 , vel[0] )
     handlePropeller(2 , vel[1] )
@@ -204,8 +222,12 @@ end
 
 function rotors_ctrl_cb(msg)
     -- rotors control subscriber callback
-    CONTROL_FROM_ROS=true
-    
+    CONTROL_FROM_ROS=true  
+    print("ROTOR RPMs:",msg.data[1]," ",msg.data[2]," ",msg.data[3]," ",msg.data[4])
+    vel[0] = msg.data[1]
+    vel[1] = msg.data[2]
+    vel[2] = msg.data[3]
+    vel[3] = msg.data[4] 
 end
 
 function desired_pos_ctrl_cb(msg)
