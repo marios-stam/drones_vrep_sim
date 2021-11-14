@@ -209,7 +209,7 @@ int main(int argc, char **argv)
         // Debugging
         // ROS_INFO("x_vel: %f, y_vel: %f, z_vel: %f", pos.x(), pos.y(), pos.z());
         // ROS_INFO("roll: %f, pitch: %f, yaw: %f", roll, pitch, yaw);
-	    // ROS_INFO("Rotor RPMs: %f %f %f %f",vel[0],vel[1],vel[2],vel[3]);
+	    //  ROS_INFO("Rotor RPMs: %f %f %f %f",vel[0],vel[1],vel[2],vel[3]);
         
         rpm_pub.publish(msg);
 
