@@ -34,7 +34,6 @@ float vertical_control(double targetHeight , double height ,double vel_z ){
     static float cumul = 0,lastE = 0;
 
     double e = (targetHeight - height);
-    ROS_INFO("e_vertical: %f",e);
     cumul = cumul + e;
     float pv = pParam * e;
 
@@ -92,7 +91,7 @@ void horizontal_control(Eigen::Matrix4f mat,Eigen::Vector3f sp,float &alphaCorr,
 	psp2 = sp[1];
     psp1 = sp[0];
 
-    ROS_INFO("alphaE: %f betaE: %f", alphaE, betaE);
+    // ROS_INFO("alphaE: %f betaE: %f", alphaE, betaE);
     // ROS_INFO("vy %f %f %f ",vy[0],vy[1],vy[2]);
     // ROS_INFO("vy[2]: %f m[2,3]: %f", vy[2], mat.coeff(2, 3));
 }
@@ -102,7 +101,7 @@ double rotational_control(float yaw_error){
 	static float pYaw = 0;
     
 	// double yaw_error = des_yaw - yaw;
-    ROS_INFO("yaw_error: %f",yaw_error);
+    // ROS_INFO("yaw_error: %f",yaw_error);
     double rotCorr = yaw_error * 0.1 + 2 * (yaw_error - pYaw);
     pYaw = yaw_error;
 
@@ -132,20 +131,22 @@ void control(tf::StampedTransform transform, tf::StampedTransform vel_transform,
 	horizontal_control(mat,sp,alphaCorr,betaCorr);
 
     // Rotational control:
-    double des_euler[3],euler[3];
-	des_transform.getBasis().getEulerYPR(des_euler[0], des_euler[1], des_euler[2] );
-	transform.getBasis().getEulerYPR(euler[0], euler[1], euler[2] );
-    
-    double yaw_error =vel_transform.getRotation().getZ();
-	double rotCorr = rotational_control(yaw_error);
+    tf::Matrix3x3 rot = transform.getBasis();
+    double roll, pitch, yaw;
+    rot.getRPY(roll, pitch, yaw);
+	double rotCorr = rotational_control(yaw);
     
     vel[0] = thrust * (1 - alphaCorr + betaCorr + rotCorr);
 	vel[1] = thrust * (1 - alphaCorr - betaCorr - rotCorr); 
 	vel[2] = thrust * (1 + alphaCorr - betaCorr + rotCorr); 
 	vel[3] = thrust * (1 + alphaCorr + betaCorr - rotCorr);
 
+    ROS_INFO("===========================================================");
+    // ROS_INFO("curr_euler: %f %f %f",roll,pitch,yaw);
+    // ROS_INFO("des_euler: %f %f %f",des_euler[0],des_euler[1],des_euler[2]);
+    // ROS_INFO("yaw_error: %f",des_euler[0] - euler[0]);
 	// ROS_INFO("Thrust: %f  alphaCorr: %f  betaCorr: %f rotCorr: %f",thrust,alphaCorr,betaCorr,rotCorr);
-    ROS_INFO("sp: %f %f %f", sp[0], sp[1], sp[2]);
+    // ROS_INFO("sp: %f %f %f", sp[0], sp[1], sp[2]);
 
 }
 
@@ -185,7 +186,7 @@ int main(int argc, char **argv)
         tf::Matrix3x3 rot = transform_pos.getBasis();
         double roll, pitch, yaw;
         rot.getRPY(roll, pitch, yaw);
-
+        
         pos = transform_vel.getOrigin();
        
         tf::StampedTransform des_transform;

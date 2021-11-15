@@ -76,7 +76,8 @@ function sysCall_cleanup()
 end 
 
 
-CONTROL_FROM_ROS=false 
+CONTROL_FROM_ROS = false 
+first_ROS_ctrl = false 
 vel={0,0,0,0}
 function sysCall_actuation() 
     pos=sim.getObjectPosition(d,-1)
@@ -116,14 +117,9 @@ function sysCall_actuation()
                 rotation={x = error_euler[1] , y = error_euler[2] , z = error_euler[3] , w = 1 }--v-rep
             }
         }
-        --print(pos_transform_msg)
         simROS.sendTransform(pos_transform_msg)
         
 
-        -- velocities={}
-        -- velocities.data = { l[1],l[2],l[3] }
-        -- print(velocities)
-        -- simROS.publish(vel_pub,velocities)
         
     else
         sim.addLog(sim.verbosity_scripterrors,"ROS interface was not found. Cannot run.")
@@ -131,11 +127,9 @@ function sysCall_actuation()
     if (CONTROL_FROM_ROS == false) then
         -- Vertical control:
         targetPos=sim.getObjectPosition(targetObj,-1)
-        print("des_pos",targetPos)
         pos=sim.getObjectPosition(d,-1)
         l=sim.getVelocity(heli)
         e=(targetPos[3]-pos[3])
-        print("e_vert",e)
         cumul=cumul+e
         pv=pParam*e
         thrust=5.45+pv+iParam*cumul+dParam*(e-lastE)+l[3]*vParam
@@ -143,12 +137,13 @@ function sysCall_actuation()
         
         -- Horizontal control: 
         sp=sim.getObjectPosition(targetObj,d)
-        --print(sp)
+        
         m=sim.getObjectMatrix(d,-1)
         vx={1,0,0}
         vx=sim.multiplyVector(m,vx)
         vy={0,1,0}
-        -- print("Before mul")
+
+        -- print("Rotation Matrix")
         -- print(m[1],"  ",m[2],"  ",m[3],"  ",m[4],"  ")
         -- print(m[5],"  ",m[6],"  ",m[7],"  ",m[8],"  ")
         -- print(m[9],"  ",m[10],"  ",m[11],"  ",m[12],"  ")
@@ -174,7 +169,6 @@ function sysCall_actuation()
             cumulB=0
         end
         
-        --print('eB',sp[1])
         kp=0.08
         ki=0.005
         kd=3
@@ -190,29 +184,34 @@ function sysCall_actuation()
         -- Rotational control:
         euler=sim.getObjectOrientation(d,targetObj)
         des_euler=sim.getObjectOrientation(targetObj,-1)
-        print("des_euler",des_euler)
-        print("yaw_error:",euler[3])
+
         rotCorr=euler[3]*0.1+2*(euler[3]-prevEuler)
         prevEuler=euler[3]
         
-        print("des_euler",euler)
         
         vel[0] = thrust*(1-alphaCorr+betaCorr+rotCorr)
         vel[1] = thrust*(1-alphaCorr-betaCorr-rotCorr)
         vel[2] = thrust*(1+alphaCorr-betaCorr+rotCorr)
         vel[3] = thrust*(1+alphaCorr+betaCorr-rotCorr)
+    else
+        if (first_ROS_ctrl == false) then
+            print("ROS control Activated")
+            first_ROS_ctrl = true
+        end
+        
     end
     
-    
-    --print("thrust",thrust," alphaCorr",alphaCorr," betaCorr",betaCorr," rotCorr",rotCorr)
-    --print("pos:",pos )
-    --print("l:",l)
-    --print("Euler:",euler)
-    --print("vy[3]: ",vy[3],"  m[12]: ",m[12])
+    -- DEBUGGING
+    -- print("thrust",thrust," alphaCorr",alphaCorr," betaCorr",betaCorr," rotCorr",rotCorr)
+    -- print("pos:",pos )
+    -- print("l:",l)
+    -- print("Euler:",euler)
+    -- print("vy[3]: ",vy[3],"  m[12]: ",m[12])
     -- print("alphaE:",alphaE,"betaE:",betaE)
-    --print(vel[0],"   ",vel[1],"   ",vel[2],"   ",vel[3])
-    --print("ROTOR RPMs:",vel[0]," ",vel[1]," ",vel[2]," ",vel[3])
-    print("sp",sp)
+    -- print(vel[0],"   ",vel[1],"   ",vel[2],"   ",vel[3])
+    -- print("ROTOR RPMs:",vel[0]," ",vel[1]," ",vel[2]," ",vel[3])
+    -- print("sp",sp)
+    
     -- Decide of the motor velocities:
     handlePropeller(1 , vel[0] )
     handlePropeller(2 , vel[1] )
@@ -222,8 +221,9 @@ end
 
 function rotors_ctrl_cb(msg)
     -- rotors control subscriber callback
-    CONTROL_FROM_ROS=true  
-    print("ROTOR RPMs:",msg.data[1]," ",msg.data[2]," ",msg.data[3]," ",msg.data[4])
+    CONTROL_FROM_ROS=true 
+    
+    
     vel[0] = msg.data[1]
     vel[1] = msg.data[2]
     vel[2] = msg.data[3]
